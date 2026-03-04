@@ -227,13 +227,15 @@ local function createEntry(partPath, partObj, hitName, isLoading, order)
 	end)
 
 	scriptBtn.MouseButton1Click:Connect(function()
-        -- FIXED: Script now matches the fire button logic and partPath
 		local scriptToCopy = string.format([[firetouchinterest(game:GetService("Players").LocalPlayer.Character:WaitForChild("%s"), %s, 0) task.wait(0.1) firetouchinterest(game:GetService("Players").LocalPlayer.Character:WaitForChild("%s"), %s, 1)]], limbName, partPath, limbName, partPath)
 		
         if setclipboard then setclipboard(scriptToCopy) end
         
-        -- FIXED: Saved file now matches the clipboard script exactly
-        local fileName = folderName .. "/" .. smartName:gsub("[%p%s]", "") .. ".txt"
+        -- Create the folder if it doesn't exist, then write the file there
+        local scriptFolder = folderName .. "/Created Scripts"
+        if not isfolder(scriptFolder) then makefolder(scriptFolder) end
+        
+        local fileName = scriptFolder .. "/" .. smartName:gsub("[%p%s]", "") .. ".txt"
         writefile(fileName, scriptToCopy)
         
         scriptBtn.Text = "SCRIPT COPIED!"; task.wait(1); scriptBtn.Text = "CREATE SCRIPT"
