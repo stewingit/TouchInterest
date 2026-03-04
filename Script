@@ -227,10 +227,15 @@ local function createEntry(partPath, partObj, hitName, isLoading, order)
 	end)
 
 	scriptBtn.MouseButton1Click:Connect(function()
-		local scriptToCopy = string.format([[firetouchinterest(game:GetService("Players").LocalPlayer.Character:WaitForChild("%s"), game:GetService("Workspace").%s, 0) task.wait(0.1) firetouchinterest(game:GetService("Players").LocalPlayer.Character:WaitForChild("%s"), game:GetService("Workspace").%s, 1)]], limbName, partPath:gsub("Game.Workspace.", ""), limbName, partPath:gsub("Game.Workspace.", ""))
-		if setclipboard then setclipboard(scriptToCopy) end
+        -- FIXED: Script now matches the fire button logic and partPath
+		local scriptToCopy = string.format([[firetouchinterest(game:GetService("Players").LocalPlayer.Character:WaitForChild("%s"), %s, 0) task.wait(0.1) firetouchinterest(game:GetService("Players").LocalPlayer.Character:WaitForChild("%s"), %s, 1)]], limbName, partPath, limbName, partPath)
+		
+        if setclipboard then setclipboard(scriptToCopy) end
+        
+        -- FIXED: Saved file now matches the clipboard script exactly
         local fileName = folderName .. "/" .. smartName:gsub("[%p%s]", "") .. ".txt"
         writefile(fileName, scriptToCopy)
+        
         scriptBtn.Text = "SCRIPT COPIED!"; task.wait(1); scriptBtn.Text = "CREATE SCRIPT"
 	end)
 
