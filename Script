@@ -1,0 +1,295 @@
+-- TOUCH interest
+local Players = game:GetService("Players")
+local localPlayer = Players.LocalPlayer
+local CoreGui = game:GetService("CoreGui")
+local UserInputService = game:GetService("UserInputService")
+
+-- GUI Cleanup: Deletes previous version if it exists
+local existingGui = (gethui and gethui():FindFirstChild("TouchInterest")) or CoreGui:FindFirstChild("TouchInterest") or localPlayer:WaitForChild("PlayerGui"):FindFirstChild("TouchInterest")
+if existingGui then
+    existingGui:Destroy()
+end
+
+-- Persistent UI setup
+local sg = Instance.new("ScreenGui")
+sg.Name = "TouchInterest"
+sg.ResetOnSpawn = false
+sg.Parent = (gethui and gethui()) or CoreGui or localPlayer:WaitForChild("PlayerGui")
+
+-- Main Window
+local main = Instance.new("Frame", sg)
+main.Size = UDim2.new(0, 280, 0, 450)
+main.Position = UDim2.new(0.05, 0, 0.2, 0)
+main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+main.Active = true
+Instance.new("UICorner", main)
+
+-- Title Bar
+local title = Instance.new("TextLabel", main)
+title.Size = UDim2.new(1, 0, 0, 40)
+title.Text = "TouchInterest Spy"
+title.TextColor3 = Color3.new(1, 1, 1)
+title.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 18
+title.Active = true
+Instance.new("UICorner", title)
+
+-- Dragging Logic
+local dragging, dragStart, startPos
+title.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		dragging = true
+		dragStart = input.Position
+		startPos = main.Position
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then dragging = false end
+		end)
+	end
+end)
+UserInputService.InputChanged:Connect(function(input)
+	if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		local delta = input.Position - dragStart
+		main.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+	end
+end)
+
+-- Styled Square Pause/Play Button (Top-Left)
+local pauseBtn = Instance.new("TextButton", title)
+pauseBtn.Size = UDim2.new(0, 30, 0, 30)
+pauseBtn.Position = UDim2.new(0, 5, 0, 5)
+pauseBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60) -- Light Grey
+pauseBtn.Text = "II"
+pauseBtn.TextColor3 = Color3.new(1, 1, 1)
+pauseBtn.Font = Enum.Font.SourceSansBold
+pauseBtn.TextSize = 14
+Instance.new("UICorner", pauseBtn)
+
+-- Styled Square Minimizer Button (Top-Right)
+local minBtn = Instance.new("TextButton", title)
+minBtn.Size = UDim2.new(0, 30, 0, 30)
+minBtn.Position = UDim2.new(1, -35, 0, 5)
+minBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60) -- Light Grey
+minBtn.Text = "—"
+minBtn.TextColor3 = Color3.new(1, 1, 1)
+minBtn.Font = Enum.Font.SourceSansBold
+minBtn.TextSize = 14
+Instance.new("UICorner", minBtn)
+
+-- Log Scrolling Frame
+local scroll = Instance.new("ScrollingFrame", main)
+scroll.Size = UDim2.new(1, -20, 1, -110)
+scroll.Position = UDim2.new(0, 10, 0, 50)
+scroll.BackgroundTransparency = 1
+scroll.ScrollBarThickness = 4
+scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+
+local layout = Instance.new("UIListLayout", scroll)
+layout.Padding = UDim.new(0, 5)
+
+-- Clear Button
+local clearBtn = Instance.new("TextButton", main)
+clearBtn.Size = UDim2.new(1, -20, 0, 45)
+clearBtn.Position = UDim2.new(0, 10, 1, -55)
+clearBtn.BackgroundColor3 = Color3.fromRGB(120, 40, 40)
+clearBtn.Text = "CLEAR ALL LOGS"
+clearBtn.TextColor3 = Color3.new(1, 1, 1)
+clearBtn.Font = Enum.Font.SourceSansBold
+clearBtn.TextSize = 16
+Instance.new("UICorner", clearBtn)
+
+-- Logic Variables
+local loggedParts = {}
+local COOLDOWN_TIME = 5.0
+local lastLoggedPath = ""
+local minimized = false
+local isPaused = false
+
+-- Pause Logic
+pauseBtn.MouseButton1Click:Connect(function()
+    isPaused = not isPaused
+    pauseBtn.Text = isPaused and "▶" or "II"
+end)
+
+-- Minimizer Logic
+minBtn.MouseButton1Click:Connect(function()
+	minimized = not minimized
+	main:TweenSize(minimized and UDim2.new(0, 280, 0, 40) or UDim2.new(0, 280, 0, 450), "Out", "Quad", 0.3, true)
+	scroll.Visible = not minimized
+	clearBtn.Visible = not minimized
+	minBtn.Text = minimized and "+" or "—"
+    pauseBtn.Visible = not minimized
+end)
+
+-- Enhanced Smart Naming Logic
+local function getSmartName(obj)
+    local forbidden = {
+        ["Part"]=true, ["Model"]=true, ["Union"]=true, ["UnionOperation"]=true, 
+        ["MeshPart"]=true, ["WedgePart"]=true, ["TrussPart"]=true, 
+        ["CornerWedgePart"]=true, ["Workspace"]=true
+    }
+    
+    if not forbidden[obj.Name] then return obj.Name end
+    
+    local pathParts = obj:GetFullName():split(".")
+    for i = #pathParts - 1, 1, -1 do
+        local name = pathParts[i]
+        if not forbidden[name] then
+            return name .. " (" .. obj.ClassName:gsub("Operation", "") .. ")"
+        end
+    end
+    return obj.Name
+end
+
+local function createEntry(partPath, partObj, hitObj)
+	local smartName = getSmartName(partObj)
+	local limbName = hitObj.Name 
+	
+	local entryFrame = Instance.new("Frame", scroll)
+	entryFrame.Size = UDim2.new(1, -10, 0, 35)
+	entryFrame.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	entryFrame.ClipsDescendants = true
+	Instance.new("UICorner", entryFrame)
+
+	local btn = Instance.new("TextButton", entryFrame)
+	btn.Size = UDim2.new(1, -35, 0, 35)
+	btn.Text = "  ▶ " .. smartName
+	btn.TextColor3 = Color3.new(1, 1, 1)
+	btn.Font = Enum.Font.SourceSansBold
+	btn.TextSize = 15
+	btn.TextXAlignment = Enum.TextXAlignment.Left
+	btn.BackgroundTransparency = 1
+
+    -- Delete Button (Single Log)
+    local delLog = Instance.new("TextButton", entryFrame)
+    delLog.Size = UDim2.new(0, 30, 0, 30)
+    delLog.Position = UDim2.new(1, -32, 0, 2)
+    delLog.BackgroundColor3 = Color3.fromRGB(60, 60, 60) -- Light Grey
+    delLog.Text = "X"
+    delLog.TextColor3 = Color3.new(1, 1, 1)
+    delLog.Font = Enum.Font.SourceSansBold
+    delLog.TextSize = 14
+    Instance.new("UICorner", delLog)
+
+	local content = Instance.new("Frame", entryFrame)
+	content.Size = UDim2.new(1, 0, 0, 195)
+	content.Position = UDim2.new(0, 0, 0, 35)
+	content.BackgroundTransparency = 1
+	content.Visible = false
+
+	local targetLabel = Instance.new("TextLabel", content)
+	targetLabel.Size = UDim2.new(1, -20, 0, 35)
+	targetLabel.Position = UDim2.new(0, 10, 0, 5)
+	targetLabel.BackgroundTransparency = 1
+	targetLabel.Text = partPath 
+	targetLabel.TextColor3 = Color3.fromRGB(0, 200, 255)
+	targetLabel.TextSize = 11
+	targetLabel.Font = Enum.Font.Code
+	targetLabel.TextWrapped = true
+	targetLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+	local copyBtn = Instance.new("TextButton", content)
+	copyBtn.Size = UDim2.new(1, -20, 0, 30)
+	copyBtn.Position = UDim2.new(0, 10, 0, 45)
+	copyBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	copyBtn.Text = "COPY PATH"
+	copyBtn.TextColor3 = Color3.new(1, 1, 1)
+	copyBtn.Font = Enum.Font.SourceSansBold
+	copyBtn.TextSize = 14
+	Instance.new("UICorner", copyBtn)
+
+	local fireBtn = Instance.new("TextButton", content)
+	fireBtn.Size = UDim2.new(1, -20, 0, 40)
+	fireBtn.Position = UDim2.new(0, 10, 0, 80)
+	fireBtn.BackgroundColor3 = Color3.fromRGB(40, 120, 40)
+	fireBtn.Text = "FIRE TOUCH INTEREST"
+	fireBtn.TextColor3 = Color3.new(1, 1, 1)
+	fireBtn.Font = Enum.Font.SourceSansBold
+	fireBtn.TextSize = 16
+	Instance.new("UICorner", fireBtn)
+
+	local scriptBtn = Instance.new("TextButton", content)
+	scriptBtn.Size = UDim2.new(1, -20, 0, 30)
+	scriptBtn.Position = UDim2.new(0, 10, 0, 125)
+	scriptBtn.BackgroundColor3 = Color3.fromRGB(60, 80, 100)
+	scriptBtn.Text = "CREATE SCRIPT"
+	scriptBtn.TextColor3 = Color3.new(1, 1, 1)
+	scriptBtn.Font = Enum.Font.SourceSansBold
+	scriptBtn.TextSize = 14
+	Instance.new("UICorner", scriptBtn)
+
+	local hitLabel = Instance.new("TextLabel", content)
+	hitLabel.Size = UDim2.new(1, -20, 0, 25)
+	hitLabel.Position = UDim2.new(0, 10, 0, 160)
+	hitLabel.BackgroundTransparency = 1
+	hitLabel.Text = "Hit by: " .. limbName
+	hitLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
+	hitLabel.TextSize = 13
+	hitLabel.Font = Enum.Font.SourceSansItalic
+	hitLabel.TextXAlignment = Enum.TextXAlignment.Left
+
+	btn.MouseButton1Click:Connect(function()
+		content.Visible = not content.Visible
+		entryFrame.Size = content.Visible and UDim2.new(1, -10, 0, 230) or UDim2.new(1, -10, 0, 35)
+		btn.Text = content.Visible and "  ▼ " .. smartName or "  ▶ " .. smartName
+	end)
+
+    delLog.MouseButton1Click:Connect(function()
+        entryFrame:Destroy()
+    end)
+
+	copyBtn.MouseButton1Click:Connect(function()
+		if setclipboard then
+			setclipboard(partPath)
+			copyBtn.Text = "COPIED!"; task.wait(1); copyBtn.Text = "COPY PATH"
+		end
+	end)
+
+	scriptBtn.MouseButton1Click:Connect(function()
+		if setclipboard then
+			local scriptToCopy = string.format([[firetouchinterest(game:GetService("Players").LocalPlayer.Character:WaitForChild("%s"), %s, 0) task.wait(0.1) firetouchinterest(game:GetService("Players").LocalPlayer.Character:WaitForChild("%s"), %s, 1)]], limbName, partPath, limbName, partPath)
+			setclipboard(scriptToCopy)
+			scriptBtn.Text = "SCRIPT COPIED!"; task.wait(1); scriptBtn.Text = "CREATE SCRIPT"
+		end
+	end)
+
+	fireBtn.MouseButton1Click:Connect(function()
+		local char = localPlayer.Character
+		local limb = char and char:FindFirstChild(limbName)
+		if limb and partObj then
+			firetouchinterest(limb, partObj, 0)
+			task.wait(0.1)
+			firetouchinterest(limb, partObj, 1)
+			fireBtn.Text = "FIRED!"; task.wait(0.5); fireBtn.Text = "FIRE TOUCH INTEREST"
+		end
+	end)
+end
+
+clearBtn.MouseButton1Click:Connect(function()
+	for _, v in ipairs(scroll:GetChildren()) do if v:IsA("Frame") then v:Destroy() end end
+	loggedParts = {}; lastLoggedPath = ""
+end)
+
+local function hook(p)
+	if p:IsA("BasePart") then
+		p.Touched:Connect(function(hit)
+            if isPaused then return end
+			local char = localPlayer.Character
+			if not char or not hit:IsDescendantOf(char) then return end
+			local pPath = p:GetFullName()
+			if pPath == lastLoggedPath then return end
+			if loggedParts[pPath] and tick() - loggedParts[pPath] < COOLDOWN_TIME then return end
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum and (hit.Name:find("Leg") or hit.Name:find("Foot")) and (hum:GetState() == Enum.HumanoidStateType.Running or hum:GetState() == Enum.HumanoidStateType.RunningNoPhysics) then return end
+			if p:FindFirstAncestorOfClass("Model") and p:FindFirstAncestorOfClass("Model"):FindFirstChildOfClass("Humanoid") then return end
+			if p.Name == "Baseplate" or p:IsA("Terrain") then return end
+			lastLoggedPath = pPath
+			loggedParts[pPath] = tick()
+			createEntry(pPath, p, hit)
+		end)
+	end
+end
+
+for _, item in ipairs(workspace:GetDescendants()) do hook(item) end
+workspace.DescendantAdded:Connect(hook)
